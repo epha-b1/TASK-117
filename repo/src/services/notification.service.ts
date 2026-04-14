@@ -250,9 +250,21 @@ export async function getRetryQueue(userId: string): Promise<Notification[]> {
   return all.filter((n) => n.status === 'failed' || n.status === 'queued');
 }
 
-export async function retry(notificationId: string): Promise<void> {
+export async function retry(
+  notificationId: string,
+  actorId: string = 'system'
+): Promise<void> {
+  await authorize(actorId, 'notification:retry');
   const n = await get('notifications', notificationId);
   if (!n) return;
+  // If the underlying failure is structural (unknown template / missing
+  // recipient) the retry cannot recover — keep the notification failed so
+  // operators don't see a fake "dispatched" state. Recovery requires the
+  // caller to re-dispatch with corrected inputs.
+  if (!TEMPLATES[n.eventType] || !n.recipientId) {
+    await put('notifications', { ...n, retryCount: n.retryCount + 1 });
+    return;
+  }
   const dnd = await getDnd(n.recipientId);
   const inDnd = isInDndWindow(new Date(), dnd);
   const updated: Notification = {

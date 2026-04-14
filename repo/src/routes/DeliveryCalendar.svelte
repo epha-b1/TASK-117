@@ -10,9 +10,19 @@
   import { leadService } from '../services/lead.service';
   import type { Delivery, DeliveryStatus } from '../types/delivery.types';
   import type { Job } from '../types/job.types';
-  import { session } from '../stores/session.store';
+  import { session, currentRole } from '../stores/session.store';
   import { pushToast } from '../stores/toast.store';
   import { formatCurrency } from '../utils/format';
+
+  $: canCreateDelivery =
+    $currentRole === 'administrator' ||
+    $currentRole === 'dispatcher' ||
+    $currentRole === 'planner';
+  $: canEnqueueJobs =
+    $currentRole === 'administrator' ||
+    $currentRole === 'planner' ||
+    $currentRole === 'dispatcher';
+  $: canExportQueue = $currentRole === 'administrator' || $currentRole === 'dispatcher';
 
   const slots = deliveryService.getAvailableSlots();
 
@@ -165,9 +175,15 @@
       <span>{week[0]} to {week[6]}</span>
     {/if}
     <div class="spacer"></div>
-    <button on:click={startBulkGenerate} data-testid="bulk-generate-btn">Generate bulk drafts</button>
-    <button on:click={handleExportQueue} data-testid="export-queue-btn">Export Delivery API Queue</button>
-    <button class="primary" on:click={() => (createOpen = true)}>+ New delivery</button>
+    {#if canEnqueueJobs}
+      <button on:click={startBulkGenerate} data-testid="bulk-generate-btn">Generate bulk drafts</button>
+    {/if}
+    {#if canExportQueue}
+      <button on:click={handleExportQueue} data-testid="export-queue-btn">Export Delivery API Queue</button>
+    {/if}
+    {#if canCreateDelivery}
+      <button class="primary" on:click={() => (createOpen = true)}>+ New delivery</button>
+    {/if}
   </div>
 
   {#if bulkJob}

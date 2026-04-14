@@ -24,6 +24,7 @@
 
   let exceptionType: ExceptionType = 'reschedule';
   let exceptionReason = '';
+  let adapterStatus: { status?: string; externalId?: string; success?: boolean } | null = null;
 
   $: if (delivery && open) {
     date = delivery.scheduledDate || new Date().toISOString().slice(0, 10);
@@ -41,6 +42,28 @@
     try {
       await deliveryService.scheduleDelivery(delivery.id, date, slot, $session.userId);
       pushToast('Delivery scheduled', 'success');
+      onChange();
+    } catch (e) {
+      pushToast((e as Error).message, 'error');
+    }
+  }
+
+  async function syncAdapterStatus() {
+    if (!delivery || !$session) return;
+    try {
+      const res = await deliveryService.fetchDeliveryStatus(delivery.id, $session.userId);
+      adapterStatus = res.adapter;
+    } catch (e) {
+      pushToast((e as Error).message, 'error');
+    }
+  }
+
+  async function cancelThisDelivery() {
+    if (!delivery || !$session) return;
+    if (!confirm('Cancel this delivery? This also records a cancelDelivery call in the adapter queue.')) return;
+    try {
+      await deliveryService.cancelDelivery(delivery.id, $session.userId);
+      pushToast('Delivery cancelled', 'info');
       onChange();
     } catch (e) {
       pushToast((e as Error).message, 'error');
@@ -118,7 +141,15 @@
           {#each slots as s}<option value={s}>{s}</option>{/each}
         </select>
         <button on:click={submitSchedule}>Save slot</button>
+        <button on:click={syncAdapterStatus} data-testid="sync-adapter-btn">Sync adapter status</button>
+        <button on:click={cancelThisDelivery} class="danger">Cancel delivery</button>
       </div>
+      {#if adapterStatus}
+        <div class="adapter-status" data-testid="adapter-status">
+          Adapter (offline stub): {adapterStatus.status ?? 'unknown'}
+          {#if adapterStatus.externalId}· {adapterStatus.externalId}{/if}
+        </div>
+      {/if}
     </section>
 
     <section>
@@ -176,4 +207,6 @@
   ul li { font-size: 13px; padding: 4px 0; border-bottom: 1px solid #eee; }
   .thumb, .preview { max-width: 120px; border-radius: 4px; display: block; margin-top: 4px; }
   .error { color: #991b1b; font-size: 12px; }
+  .adapter-status { font-size: 12px; color: #374151; margin-top: 6px; }
+  button.danger { background: #b91c1c; }
 </style>

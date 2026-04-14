@@ -16,9 +16,11 @@
     PlanStatus
   } from '../types/plan.types';
   import type { Job } from '../types/job.types';
-  import { session } from '../stores/session.store';
+  import { session, currentRole } from '../stores/session.store';
   import { pushToast } from '../stores/toast.store';
   import { formatDate } from '../utils/format';
+
+  $: canEditPlans = $currentRole === 'administrator' || $currentRole === 'planner';
 
   let plans: Plan[] = [];
   let statusFilter: PlanStatus | '' = '';
@@ -203,7 +205,9 @@
     </select>
     <input placeholder="Tag filter" bind:value={tagFilter} on:input={refreshPlans} />
     <div class="spacer"></div>
-    <button class="primary" on:click={() => (createOpen = true)}>+ New plan</button>
+    {#if canEditPlans}
+      <button class="primary" on:click={() => (createOpen = true)}>+ New plan</button>
+    {/if}
   </div>
 
   <table class="data-table">
@@ -243,18 +247,21 @@
     <div class="head">
       <div>Status: {activePlan.status} · v{activePlan.currentVersion}</div>
       <div class="drawer-actions">
-        <button on:click={() => (saveVersionOpen = true)}>Save version</button>
-        <button on:click={copyActive}>Copy</button>
-        <button on:click={archiveActive}>Archive</button>
-        <button on:click={() => (shareOpen = true)}>Share</button>
+        {#if canEditPlans}
+          <button on:click={() => (saveVersionOpen = true)}>Save version</button>
+          <button on:click={copyActive}>Copy</button>
+          <button on:click={archiveActive}>Archive</button>
+          <button on:click={() => (shareOpen = true)}>Share</button>
+        {/if}
         <button on:click={() => (compareOpen = true)}>Compare</button>
       </div>
     </div>
 
-    <h4>BOM (working copy)</h4>
+    <h4>BOM {canEditPlans ? '(working copy)' : '(read-only)'}</h4>
     <BomEditor
       planId={activePlan.id}
       items={activePlan.bom}
+      readOnly={!canEditPlans}
       onChange={refreshActive}
     />
 
@@ -267,7 +274,11 @@
             <td>v{v.version}</td>
             <td>{v.changeNote}</td>
             <td>{formatDate(v.savedAt)}</td>
-            <td><button class="link" on:click={() => rollbackTo(v)}>Rollback</button></td>
+            <td>
+              {#if canEditPlans}
+                <button class="link" on:click={() => rollbackTo(v)}>Rollback</button>
+              {/if}
+            </td>
           </tr>
         {/each}
         {#if versions.length === 0}<tr><td colspan="4" class="empty">No versions yet</td></tr>{/if}

@@ -9,9 +9,11 @@
   import type { Lead, LeadStatus } from '../types/lead.types';
   import type { User } from '../types/auth.types';
   import { listUsers } from '../services/auth.service';
-  import { session } from '../stores/session.store';
+  import { session, currentRole } from '../stores/session.store';
   import { pushToast } from '../stores/toast.store';
   import { formatCurrency, formatDate } from '../utils/format';
+
+  $: canCreateLead = $currentRole === 'administrator' || $currentRole === 'sales_coordinator';
 
   const STATUSES: Array<LeadStatus | ''> = ['', 'new', 'in_discussion', 'quoted', 'confirmed', 'closed'];
 
@@ -55,10 +57,15 @@
 
   async function handleCreate(data: Parameters<typeof leadService.createLead>[0]) {
     if (!$session) return;
-    await leadService.createLead(data, $session.userId);
-    createOpen = false;
-    pushToast('Lead created', 'success');
-    await refresh();
+    try {
+      await leadService.createLead(data, $session.userId);
+      createOpen = false;
+      pushToast('Lead created', 'success');
+      await refresh();
+    } catch (e) {
+      pushToast((e as Error).message, 'error');
+      throw e;
+    }
   }
 
   function openDrawer(lead: Lead) {
@@ -90,7 +97,9 @@
       {/each}
     </select>
     <div class="spacer"></div>
-    <button class="primary" on:click={() => (createOpen = true)}>+ New lead</button>
+    {#if canCreateLead}
+      <button class="primary" on:click={() => (createOpen = true)}>+ New lead</button>
+    {/if}
   </div>
 
   <table class="data-table">

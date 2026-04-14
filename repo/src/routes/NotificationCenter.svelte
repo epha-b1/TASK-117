@@ -56,9 +56,14 @@
   }
 
   async function retryOne(id: string) {
-    await notificationService.retry(id);
-    await refresh();
-    pushToast('Retried', 'info');
+    if (!$session) return;
+    try {
+      await notificationService.retry(id, $session.userId);
+      await refresh();
+      pushToast('Retried', 'info');
+    } catch (e) {
+      pushToast((e as Error).message, 'error');
+    }
   }
 
   async function updateSub(eventType: string, subscribed: boolean) {
