@@ -10,7 +10,7 @@ build/
 .svelte-kit/
 
 # Temp and cache files
-*.tmp
+# *.tmp
 *.temp
 *.log
 *.log.*

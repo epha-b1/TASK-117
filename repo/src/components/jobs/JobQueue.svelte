@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { jobService } from '../../services/job.service';
   import { session } from '../../stores/session.store';
+  import { pushToast } from '../../stores/toast.store';
   import ProgressBar from '../common/ProgressBar.svelte';
   import type { Job } from '../../types/job.types';
   import { formatDate } from '../../utils/format';
@@ -18,8 +19,25 @@
     if (!$session) return;
     try {
       await jobService.cancel(jobId, $session.userId);
+      pushToast('Job cancelled', 'info');
     } catch (e) {
-      console.error(e);
+      pushToast((e as Error).message ?? 'Failed to cancel job', 'error');
+    }
+  }
+
+  async function handlePause(jobId: string) {
+    try {
+      await jobService.pause(jobId);
+    } catch (e) {
+      pushToast((e as Error).message ?? 'Failed to pause job', 'error');
+    }
+  }
+
+  async function handleResume(jobId: string) {
+    try {
+      await jobService.resume(jobId);
+    } catch (e) {
+      pushToast((e as Error).message ?? 'Failed to resume job', 'error');
     }
   }
 </script>
@@ -51,10 +69,10 @@
           </td>
           <td>
             {#if job.status === 'running'}
-              <button on:click={() => jobService.pause(job.id)}>Pause</button>
+              <button on:click={() => handlePause(job.id)}>Pause</button>
               <button on:click={() => handleCancel(job.id)}>Cancel</button>
             {:else if job.status === 'paused'}
-              <button on:click={() => jobService.resume(job.id)}>Resume</button>
+              <button on:click={() => handleResume(job.id)}>Resume</button>
               <button on:click={() => handleCancel(job.id)}>Cancel</button>
             {/if}
             {#if job.errorMessage}<span class="err">{job.errorMessage}</span>{/if}

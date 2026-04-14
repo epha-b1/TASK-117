@@ -1,8 +1,9 @@
-import { get, getAll, put } from './db';
+import { get, getAll, put, del } from './db';
 import { uid } from '../utils/uid';
-import type { Job, JobStatus, JobType } from '../types/job.types';
+import type { Job, JobStatus, JobType, JobCheckpoint } from '../types/job.types';
+import type { User } from '../types/auth.types';
 import { writable } from 'svelte/store';
-import type { MainToWorker, WorkerToMain } from '../workers/protocol';
+import type { MainToWorker, WorkerToMain, WorkerCheckpoint } from '../workers/protocol';
 import * as notif from './notification.service';
 import * as audit from './audit.service';
 import { authorize } from './authz.service';
@@ -10,6 +11,7 @@ import { authorize } from './authz.service';
 const LONG_RUN_MS = 30_000;
 const ERROR_RATE_WINDOW = 50;
 const ERROR_RATE_THRESHOLD = 0.02;
+const ALERT_RECIPIENT_ROLES = ['administrator', 'planner', 'dispatcher'];
 
 export const jobsStore = writable<Job[]>([]);
 
@@ -45,6 +47,27 @@ async function updateJob(id: string, patch: Partial<Job>): Promise<Job | undefin
   await put('jobs', updated);
   await refreshStore();
   return updated;
+}
+
+async function getAlertRecipients(): Promise<string[]> {
+  const users = (await getAll('users')) as User[];
+  return users
+    .filter((u) => u.isActive && ALERT_RECIPIENT_ROLES.includes(u.role))
+    .map((u) => u.id);
+}
+
+async function dispatchJobAlert(
+  eventType: 'job_long_running' | 'job_error_rate',
+  variables: Record<string, string>
+): Promise<void> {
+  const recipients = await getAlertRecipients();
+  for (const recipientId of recipients) {
+    try {
+      await notif.dispatch(eventType, recipientId, variables);
+    } catch {
+      /* individual recipient failure should not abort the alert fan-out */
+    }
+  }
 }
 
 export async function enqueue(type: JobType, input: unknown, actorId = 'system'): Promise<Job> {
@@ -83,9 +106,7 @@ function startJob(job: Job) {
   void updateJob(job.id, { status: 'running', startedAt });
 
   const longRunTimer = window.setTimeout(() => {
-    void notif
-      .dispatch('job_long_running', 'system', { jobId: job.id })
-      .catch(() => {});
+    void dispatchJobAlert('job_long_running', { jobId: job.id }).catch(() => {});
   }, LONG_RUN_MS);
 
   running.set(job.id, { worker, startedAt, longRunTimer: longRunTimer as unknown as number });
@@ -93,6 +114,16 @@ function startJob(job: Job) {
   worker.onmessage = async (e: MessageEvent<WorkerToMain>) => {
     const msg = e.data;
     if (msg.kind === 'progress') {
+      await updateJob(job.id, { progress: msg.progress });
+    } else if (msg.kind === 'checkpoint') {
+      const cp: JobCheckpoint = {
+        jobId: job.id,
+        progress: msg.progress,
+        index: msg.index,
+        partial: msg.partial,
+        updatedAt: Date.now()
+      };
+      await put('job_checkpoints', cp);
       await updateJob(job.id, { progress: msg.progress });
     } else if (msg.kind === 'paused') {
       await updateJob(job.id, { status: 'paused' });
@@ -108,6 +139,7 @@ function startJob(job: Job) {
         completedAt: Date.now(),
         runtimeMs: Date.now() - startedAt
       });
+      await del('job_checkpoints', job.id);
       cleanup(job.id);
       await checkErrorRate();
     } else if (msg.kind === 'error') {
@@ -122,9 +154,20 @@ function startJob(job: Job) {
     }
   };
 
-  const inputPromise = get('job_inputs', job.inputRef);
-  void inputPromise.then((rec) => {
-    const payload: MainToWorker = { cmd: 'start', jobId: job.id, input: rec?.data };
+  const inputPromise = Promise.all([
+    get('job_inputs', job.inputRef),
+    get('job_checkpoints', job.id)
+  ]);
+  void inputPromise.then(([rec, cp]) => {
+    const checkpoint: WorkerCheckpoint | undefined = cp
+      ? { index: cp.index, partial: cp.partial }
+      : undefined;
+    const payload: MainToWorker = {
+      cmd: 'start',
+      jobId: job.id,
+      input: rec?.data,
+      checkpoint
+    };
     worker.postMessage(payload);
   });
 }
@@ -140,9 +183,7 @@ function cleanup(jobId: string) {
 async function checkErrorRate(): Promise<number> {
   const rate = await getErrorRate();
   if (rate > ERROR_RATE_THRESHOLD) {
-    await notif
-      .dispatch('job_error_rate', 'system', { rate: (rate * 100).toFixed(1) })
-      .catch(() => {});
+    await dispatchJobAlert('job_error_rate', { rate: (rate * 100).toFixed(1) }).catch(() => {});
   }
   return rate;
 }
@@ -170,8 +211,15 @@ export async function pause(jobId: string): Promise<void> {
 
 export async function resume(jobId: string): Promise<void> {
   const r = running.get(jobId);
-  if (!r) return;
-  r.worker.postMessage({ cmd: 'resume', jobId } as MainToWorker);
+  if (r) {
+    r.worker.postMessage({ cmd: 'resume', jobId } as MainToWorker);
+    return;
+  }
+  // Not running in-memory — restart from persisted checkpoint (e.g. after reload).
+  const job = await get('jobs', jobId);
+  if (!job) return;
+  if (job.status === 'completed' || job.status === 'failed') return;
+  startJob(job);
 }
 
 export async function cancel(jobId: string, actorId: string = 'system'): Promise<void> {
@@ -182,6 +230,7 @@ export async function cancel(jobId: string, actorId: string = 'system'): Promise
     cleanup(jobId);
   }
   await updateJob(jobId, { status: 'failed', errorMessage: 'Cancelled', completedAt: Date.now() });
+  await del('job_checkpoints', jobId).catch(() => {});
 }
 
 export async function listJobs(): Promise<Job[]> {
@@ -191,6 +240,10 @@ export async function listJobs(): Promise<Job[]> {
 
 export async function getJob(id: string): Promise<Job | undefined> {
   return await get('jobs', id);
+}
+
+export async function getJobCheckpoint(jobId: string): Promise<JobCheckpoint | undefined> {
+  return await get('job_checkpoints', jobId);
 }
 
 export async function getJobResult<T = unknown>(jobId: string): Promise<T | null> {
@@ -211,6 +264,7 @@ export const jobService = {
   cancel,
   listJobs,
   getJob,
+  getJobCheckpoint,
   getJobResult,
   getErrorRate,
   initJobStore,

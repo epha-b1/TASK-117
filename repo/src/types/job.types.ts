@@ -23,3 +23,11 @@ export interface JobResultRecord {
   id: string;
   data: unknown;
 }
+
+export interface JobCheckpoint {
+  jobId: string;
+  progress: number;
+  index: number;
+  partial: unknown;
+  updatedAt: number;
+}

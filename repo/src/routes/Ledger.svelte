@@ -38,7 +38,7 @@
   $: isReadOnly = $currentRole === 'auditor';
 
   let reconcileJob: Job | null = null;
-  let reconcileReport: { accountTotals: Record<string, { deposits: number; settlements: number; refunds: number; withdrawals: number }>; count: number } | null = null;
+  let reconcileReport: { accountTotals: Record<string, { settlements: number; refunds: number; withdrawals: number }>; count: number } | null = null;
   let reconcilePollTimer: number | null = null;
 
   async function startReconcile() {

@@ -15,7 +15,7 @@ import type {
   NotificationSubscription,
   DndSettings
 } from './notification.types';
-import type { Job, JobInputRecord, JobResultRecord } from './job.types';
+import type { Job, JobInputRecord, JobResultRecord, JobCheckpoint } from './job.types';
 
 export interface AuditEntry {
   id: string;
@@ -48,6 +48,7 @@ export interface DbSchema {
   jobs: Job;
   job_inputs: JobInputRecord;
   job_results: JobResultRecord;
+  job_checkpoints: JobCheckpoint;
   audit_log: AuditEntry;
 }
 

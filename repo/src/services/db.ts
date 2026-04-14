@@ -2,7 +2,7 @@ import { openDB, type IDBPDatabase } from 'idb';
 import type { DbSchema, StoreName } from '../types/db.types';
 
 export const DB_NAME = 'forgeops';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 const STORE_DEFS: Array<{
   name: StoreName;
@@ -49,6 +49,7 @@ const STORE_DEFS: Array<{
   { name: 'jobs', keyPath: 'id', indexes: [{ name: 'by_status', keyPath: 'status' }] },
   { name: 'job_inputs', keyPath: 'id' },
   { name: 'job_results', keyPath: 'id' },
+  { name: 'job_checkpoints', keyPath: 'jobId' },
   { name: 'audit_log', keyPath: 'id', indexes: [
     { name: 'by_timestamp', keyPath: 'timestamp' },
     { name: 'by_actor', keyPath: 'actor' },
@@ -74,18 +75,16 @@ export async function __resetForTests(): Promise<void> {
 export function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion) {
-        if (oldVersion < 1) {
-          for (const def of STORE_DEFS) {
-            if (!db.objectStoreNames.contains(def.name)) {
-              const store = db.createObjectStore(def.name, {
-                keyPath: def.keyPath as IDBValidKey
+      upgrade(db) {
+        for (const def of STORE_DEFS) {
+          if (!db.objectStoreNames.contains(def.name)) {
+            const store = db.createObjectStore(def.name, {
+              keyPath: def.keyPath as IDBValidKey
+            });
+            for (const idx of def.indexes ?? []) {
+              store.createIndex(idx.name, idx.keyPath as IDBValidKey, {
+                unique: idx.unique ?? false
               });
-              for (const idx of def.indexes ?? []) {
-                store.createIndex(idx.name, idx.keyPath as IDBValidKey, {
-                  unique: idx.unique ?? false
-                });
-              }
             }
           }
         }
