@@ -1,1 +1,31 @@
+# Internal planning — not for submission
 .work/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.svelte-kit/
+
+# Temp and cache files
+*.tmp
+*.temp
+*.log
+*.log.*
+npm-debug.log*
+vite.config.ts.timestamp-*
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+.env.*.local
