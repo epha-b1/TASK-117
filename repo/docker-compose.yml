@@ -1,0 +1,8 @@
+services:
+  forgeops:
+    build: .
+    image: forgeops-console:latest
+    container_name: forgeops-console
+    ports:
+      - "5000:5000"
+    restart: unless-stopped

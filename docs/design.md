@@ -53,7 +53,7 @@ Browser (Svelte SPA)
 |---|---|
 | UI framework | Svelte 4 + TypeScript |
 | Build tool | Vite |
-| Routing | svelte-routing (hash mode) |
+| Routing | custom hash-based router (no external dependency) |
 | Persistence | IndexedDB (idb library) + LocalStorage |
 | Crypto | WebCrypto API (PBKDF2, AES-256-GCM, SHA-256) |
 | Async jobs | Web Workers (native browser API) |
@@ -260,9 +260,9 @@ templateId      string
 eventType       string
 variables       object         — key-value for template substitution
 recipientId     string         — userId
-status          string         — queued | dispatched | failed | read
+status          string         — queued | dispatched | failed
+                                 (read is tracked per-user in notification_reads)
 dispatchedAt    number
-readAt          number
 retryCount      number
 createdAt       number
 ```
