@@ -1,115 +1,121 @@
 # ForgeOps Fulfillment & Planning Console
 
-Offline-first Svelte + TypeScript SPA for a fabrication-and-delivery team: lead intake, BOM-based plan management with versioning and sharing, delivery scheduling with freight calc + POD, in-app notifications with DND, internal escrow ledger, append-only audit log, encrypted backups, a pluggable delivery-API adapter with an exportable local queue, and Web Worker-backed async jobs. No backend. All persistence is via IndexedDB + LocalStorage.
+An offline-first, single-page web application for a fabrication-and-delivery team: lead intake with round-robin assignment, BOM-based plan management with versioning and share links, delivery scheduling with freight calculation and proof-of-delivery capture, an internal escrow ledger with invoice/voucher printing, in-app notifications with DND and retry, an append-only audit log, encrypted backup/restore, a pluggable delivery-API adapter with exportable local queue, and Web Worker-backed async jobs with checkpoint persistence. No backend. All persistence is via IndexedDB + LocalStorage in the browser.
 
-## Requirements
-- Node.js 18+
-- npm 9+
-- (optional) Docker 24+ for containerised preview
+## Architecture & Tech Stack
 
-## Setup
-```
-cd repo
-npm install
+* **Frontend:** Svelte 4 + TypeScript, bundled with Vite 5
+* **Backend:** None — the app is a fully client-side SPA
+* **Database:** IndexedDB (via `idb`) + LocalStorage in the user's browser
+* **Async Jobs:** Dedicated Web Workers (BOM compare, bulk delivery generation, ledger reconciliation) with checkpointed pause/resume
+* **Crypto:** WebCrypto (PBKDF2 for password hashing, AES-256-GCM for encrypted backups)
+* **Testing:** Vitest + jsdom + fake-indexeddb, Testing Library for Svelte components
+* **Containerization:** Docker & Docker Compose (Required)
+
+## Project Structure
+
+```text
+.
+├── src/
+│   ├── components/         # Reusable Svelte components (layout, common, per-feature)
+│   ├── routes/             # Route-level pages (LeadInbox, PlanWorkspace, DeliveryCalendar, ...)
+│   ├── services/           # Business-logic services (authz, leads, plans, deliveries, ledger, jobs, ...)
+│   ├── workers/            # Web Worker entry points + main↔worker protocol
+│   ├── stores/             # Svelte stores (session, toasts)
+│   ├── guards/             # Route guards (defence-in-depth over service-layer RBAC)
+│   ├── types/              # Shared TypeScript types incl. IndexedDB schema
+│   └── utils/              # Crypto, BOM diff, distance, formatting, sanitize, uid
+├── tests/
+│   ├── unit/               # Pure-function unit tests
+│   ├── integration/        # Service + DB + RBAC integration tests
+│   └── component/          # Svelte component tests
+├── public/                 # Static assets served as-is
+├── scripts/                # Build / tooling scripts
+├── Dockerfile              # Multi-stage build (runtime + test targets) — MANDATORY
+├── docker-compose.yml      # Multi-container orchestration — MANDATORY
+├── run_tests.sh            # Standardized test execution script — MANDATORY
+└── README.md               # Project documentation — MANDATORY
 ```
 
-## Run dev server
-```
-npm run dev
-```
+## Prerequisites
 
-Then open the URL Vite prints (default http://localhost:5173).
+To ensure a consistent environment, this project is designed to run entirely within containers. You must have the following installed:
+* [Docker](https://docs.docker.com/get-docker/)
+* [Docker Compose **v2**](https://docs.docker.com/compose/install/) — invoked as `docker compose` (space, not hyphen)
 
-## Build
-```
-npm run build
-```
+> **Note:** The legacy Python `docker-compose` v1 has a known `KeyError: 'ContainerConfig'` bug when recreating containers built with BuildKit. Use the v2 plugin (`docker compose`) instead. If you only have v1, upgrade per the link above.
 
-Produces a static bundle in `dist/`. It can be served by any static server or opened directly.
+No `.env` file is required — the app has no backend and makes no network calls, so there are no secrets or API keys to configure.
 
-## Docker
-```
-docker compose up --build
-```
+## Running the Application
 
-Builds the static bundle inside the image and serves it on http://localhost:5000 via `serve`. Stop with `Ctrl+C`.
+1. **Build and Start Containers:**
+   Use Docker Compose to build the image and spin up the app in detached mode.
+   ```bash
+   docker compose up --build -d forgeops
+   ```
 
-## Tests
-```
+2. **Access the App:**
+   * Frontend: `http://localhost:5000`
+
+   The container serves the static Vite build via `serve`. There is no separate backend API or docs endpoint — all domain logic runs in the browser.
+
+3. **Stop the Application:**
+   ```bash
+   docker compose down -v
+   ```
+
+## Testing
+
+All unit, integration, and component tests are executed via a single, standardized shell script. The script runs the full Vitest suite (jsdom + fake-indexeddb) inside the `test` compose target so the test environment matches the runtime environment.
+
+Make sure the script is executable, then run it:
+
+```bash
+chmod +x run_tests.sh
 ./run_tests.sh
 ```
 
-Runs unit, integration, and component tests via Vitest (jsdom + fake-indexeddb).
+*Note: The `run_tests.sh` script outputs a standard exit code (`0` for success, non-zero for failure) to integrate smoothly with CI/CD validators.*
 
-## First Run
-On first load, a default admin account is seeded so the app is usable out of the box:
+## Seeded Credentials
 
-- **Username:** `admin`
-- **Password:** `Admin@12345`
+On first run, the app seeds a single administrator account so the console is usable out of the box. A first-run banner prompts the administrator to change the password immediately. Additional users (sales coordinators, planners, dispatchers, auditors) are created from the **Users** page.
 
-A first-run banner prompts the administrator to change the password immediately. These credentials exist only for bootstrap; they are not referenced anywhere outside of the one-time seed.
+| Role | Username | Password | Notes |
+| :--- | :--- | :--- | :--- |
+| **Administrator** | `admin` | `Admin@12345` | Full access: user admin, permissions, backup/restore, audit log. Change on first login. |
 
-## Roles
-- **Administrator** — full access; manages users, permissions, backup/restore, audit log
-- **Sales Coordinator** — captures leads, receives round-robin assignments
-- **Planner** — creates / copies / versions build plans, runs BOM diff, shares read-only links
-- **Dispatcher** — schedules deliveries, captures proof-of-delivery, logs exceptions
-- **Auditor** — read-only access to Audit Log and Ledger only
+### Role reference
 
-## RBAC — enforced in the service layer
-Permission checks are enforced by `src/services/authz.service.ts` and run at the
-top of every mutating service function (leads, plans/BOM/versions/share tokens,
-deliveries / scheduling / POD / exceptions, ledger operations, user admin,
-backup import/export, delivery-API queue export, notification settings, job
-enqueue/cancel). Route guards in `src/guards/route-guard.ts` are kept as a
-first line of defence, but the service-layer check is authoritative — an
-unauthorized call throws `AuthorizationError` regardless of how it was
-invoked. The action → permitted roles map lives in `ACTION_PERMISSIONS` in
-`authz.service.ts`.
+| Role | Capabilities |
+| :--- | :--- |
+| **Administrator** | Full access; manages users, permissions, backup/restore, audit log |
+| **Sales Coordinator** | Captures leads, receives round-robin assignments |
+| **Planner** | Creates / copies / versions build plans, runs BOM diff, shares read-only links |
+| **Dispatcher** | Schedules deliveries, captures proof-of-delivery, logs exceptions |
+| **Auditor** | Read-only access to Audit Log and Ledger |
 
-## Feature Walkthrough
+RBAC is enforced in the service layer (`src/services/authz.service.ts`) at the top of every mutating call — route guards are kept as defence-in-depth but the service-layer check is authoritative. The action → permitted roles map lives in `ACTION_PERMISSIONS` in the same file.
 
-1. **Login** as `admin / Admin@12345`. Dismiss or complete the first-run password change.
-2. **Create users** at `Users` (sidebar) with the role appropriate to each teammate.
-3. **Lead Inbox** — Create a lead. With at least one active Sales Coordinator, round-robin assignment fires automatically and an in-app notification is dispatched.
-4. **Plan Workspace** — Create a plan, add BOM items, save versions with a required change note. Rollback or compare any two versions side-by-side. Generate a share link (1–90 days) — visit `#/share/<token>` in a new tab to see the read-only view.
-5. **Delivery Calendar** — Create a delivery for an in-coverage ZIP. Freight is computed from Haversine distance to the default depot ($45 base + $1.25/mi after 20 mi, +$75 when any item length > 8 ft). Schedule into a 30-minute slot (08:00–17:30). Capture POD with signature + optional photo. Log exceptions (reschedule / refused / loss-damage).
-6. **Notification Center** — Inbox, retry queue for DND-queued / failed notifications, DND quiet hours, per-event subscriptions.
-7. **Ledger** — Create an account, deposit, freeze, settle (one-time or milestone), refund, withdraw. Bank refs mask to `****NNNN`. Print invoice / voucher via browser print.
-8. **Audit Log** — Every auth / lead / plan / delivery / ledger / backup action is appended immutably. Entries older than 180 days are purged on app load.
-9. **Backup & Restore** — Plain JSON export with SHA-256 fingerprint check, or AES-256-GCM encrypted backup with user passphrase (PBKDF2 key derivation).
-10. **Jobs** — The Jobs page is a read-only monitor for real async work.
-    Jobs are enqueued from the business pages that need them:
-    - **Plan Workspace → Compare versions** enqueues a `bom_compare` job and
-      renders the diff when the worker completes.
-    - **Delivery Calendar → "Generate bulk drafts"** enqueues a
-      `bulk_delivery` job that produces delivery drafts from confirmed leads.
-    - **Ledger → "Reconcile ledger"** enqueues a `ledger_reconcile` job that
-      walks every ledger entry and returns per-account totals.
-    Jobs report progress, support pause/resume/cancel, alert on >30 s
-    runtimes, and flag when the 50-job rolling error rate exceeds 2 %.
+## Feature Highlights
 
-## Delivery API adapter & queue export
-Scheduling or cancelling a delivery routes through the `OfflineStubAdapter`
-(`src/services/delivery-api.service.ts`), which writes a `delivery_api_queue`
-entry describing the operation plus a stub response. `getStatus` does the
-same. **Delivery Calendar → "Export Delivery API Queue"** downloads the
-current queue as JSON so it can be hand-replayed against a real backend
-later. The export is RBAC-gated and audit-logged. A notice under the
-toolbar explicitly calls out that the app makes no network calls.
-
-## Notification failure & retry
-`dispatch()` produces a `failed` notification when the event type has no
-template or the recipient id is missing or invalid — this is deterministic
-(no randomness). Failed notifications surface in the Notification Center's
-retry queue alongside DND-queued ones. **Retry** re-evaluates the recipient's
-DND window: inside DND it becomes `queued` (waits for `flushQueued`); outside
-DND it flips to `dispatched` and bumps `retryCount`.
+* **Lead Inbox** — Capture leads; round-robin assignment to active Sales Coordinators fires an in-app notification.
+* **Plan Workspace** — BOM items, versioning with required change notes, rollback, side-by-side version compare (enqueues a `bom_compare` async job), share links (1–90 days) at `#/share/<token>`.
+* **Delivery Calendar** — ZIP-coverage check, Haversine freight calc ($45 base + $1.25/mi after 20 mi, +$75 oversize), 30-minute scheduling slots (08:00–17:30), POD capture with signature + optional photo, exceptions (reschedule / refused / loss-damage), bulk draft generation (enqueues a `bulk_delivery` async job).
+* **Ledger** — Accounts, deposit / freeze / settle (one-time or milestone) / refund / withdraw, masked bank refs (`****NNNN`), print invoice / voucher, reconciliation (enqueues a `ledger_reconcile` async job).
+* **Notification Center** — Inbox, retry queue for DND-queued / failed notifications, DND quiet hours, per-event subscriptions. Job alerts (long-running > 30 s, rolling-50 error rate > 2 %) are dispatched to all active administrators, planners, and dispatchers.
+* **Audit Log** — Append-only; entries older than 180 days are purged on app load.
+* **Backup & Restore** — Plain JSON (SHA-256 fingerprint) or AES-256-GCM encrypted (PBKDF2 passphrase).
+* **Async Jobs** — Web Worker-backed with progress reporting, pause/resume, cancel, and **checkpoint persistence**: intermediate state is written to the `job_checkpoints` IndexedDB store during progress and on pause, so jobs can resume from the latest checkpoint after a reload.
+* **Delivery API adapter** — `OfflineStubAdapter` logs every schedule/cancel/status call to `delivery_api_queue`; **Delivery Calendar → "Export Delivery API Queue"** downloads the queue as JSON for later replay. RBAC-gated and audit-logged.
 
 ## Offline Guarantees
-No network calls are made in any code path. The delivery API adapter ships as `OfflineStubAdapter` that returns mock responses and logs every call to `delivery_api_queue`; the queue can be exported as JSON for later integration testing.
 
-## Container / submission notes
-- `node_modules/` and `dist/` are git-ignored and are not part of the ZIP.
-- No `.env` files are committed.
-- Default credentials are disclosed here — change immediately on first login.
+No network calls are made in any code path. The delivery API adapter ships as `OfflineStubAdapter` that returns mock responses and logs every call to `delivery_api_queue`. The queue can be exported as JSON for later integration testing against a real backend.
+
+## Submission Notes
+
+* `node_modules/` and `dist/` are git-ignored and are not part of the ZIP.
+* No `.env` files are committed or required.
+* The seeded administrator credential is disclosed above — change immediately on first login.

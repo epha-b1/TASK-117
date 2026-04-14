@@ -5,8 +5,10 @@ services:
       target: runtime
     image: forgeops-console:latest
     container_name: forgeops-console
-    ports:
-      - "5000:5000"
+    # network_mode: host bypasses Docker's bridge entirely, avoiding host
+    # firewall (ufw FORWARD DROP) and VPN MTU issues. The container listens
+    # directly on the host's loopback at port 5000.
+    network_mode: host
     restart: unless-stopped
 
   test:
