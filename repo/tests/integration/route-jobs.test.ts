@@ -60,9 +60,17 @@ describe('Jobs route', () => {
       runtimeMs: 1500
     };
     await put('jobs', job);
+    // Seed the reactive store directly so the JobQueue's subscribe picks it
+    // up immediately, regardless of the async initJobStore refresh timing.
+    jobService.jobsStore.set([job]);
 
-    const { findByText, container } = render(Jobs);
-    await findByText('ledger_reconcile');
+    const { container } = render(Jobs);
+    // Poll for the row to appear (initJobStore may re-read IDB + re-render).
+    for (let i = 0; i < 60; i++) {
+      if (container.textContent?.includes('ledger_reconcile')) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(container.textContent).toContain('ledger_reconcile');
     expect(container.textContent).toContain('completed');
     expect(container.textContent).toContain('1.5s');
   });

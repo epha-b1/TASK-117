@@ -30,8 +30,17 @@ describe('<Login> route', () => {
   });
 
   it('shows the first-run notice when the seed just ran', async () => {
-    const { findByText } = render(Login);
-    await findByText(/admin \/ Admin@12345/);
+    const { findByRole, container } = render(Login);
+    await findByRole('button', { name: /Sign in/i });
+    // Wait for onMount's ensureFirstRunSeed to flip `seeded=true` and the
+    // first-run `.notice` to render. The credential string is split across
+    // a <code> element so assert on the overall textContent.
+    for (let i = 0; i < 40; i++) {
+      if (container.querySelector('.notice')) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(container.querySelector('.notice')).not.toBeNull();
+    expect(container.textContent).toContain('admin / Admin@12345');
   });
 
   it('does NOT show the first-run notice when users already exist', async () => {
@@ -68,12 +77,14 @@ describe('<Login> route', () => {
 
   it('disables inputs and button when the anomaly cooldown is active', async () => {
     // Seed >10 recent failed-login timestamps to trigger the anomaly branch
-    // that disables the form for 60 seconds.
+    // that disables the form. We intentionally do NOT use fake timers here —
+    // Login.svelte starts a 1 s setInterval for the cooldown which can hang
+    // under fake timers. The assertion only checks the *initial* disabled
+    // state, which is set synchronously inside refreshAnomaly().
     const now = Date.now();
     const recent = Array.from({ length: 11 }, (_, i) => now - i * 1000);
     lsSet(LS_KEYS.FAILED_LOGINS, recent);
 
-    vi.useFakeTimers();
     const { container, findByText } = render(Login);
     await findByText(/Too many failed attempts/);
     const inputs = container.querySelectorAll('input');

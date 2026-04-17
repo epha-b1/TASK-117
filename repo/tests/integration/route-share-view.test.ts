@@ -25,10 +25,20 @@ describe('ShareView route', () => {
   beforeEach(freshDb);
   afterEach(cleanup);
 
+  async function waitForText(container: HTMLElement, needle: string | RegExp): Promise<void> {
+    for (let i = 0; i < 80; i++) {
+      const text = container.textContent ?? '';
+      if (typeof needle === 'string' ? text.includes(needle) : needle.test(text)) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error('waitForText timed out: ' + String(needle));
+  }
+
   it('shows "Loading shared plan…" initially, then the invalid-token error for unknown tokens', async () => {
-    const { findByText } = render(ShareView, { props: { token: 'does-not-exist' } });
-    // Either the loading text (briefly) or the final error message should appear.
-    await findByText(/invalid, revoked, or has expired/);
+    const { container } = render(ShareView, { props: { token: 'does-not-exist' } });
+    // After the async validateShareToken() resolves to null, ShareView swaps
+    // the loading paragraph for the error-box text. Poll for the final state.
+    await waitForText(container, /invalid, revoked, or has expired/);
   });
 
   it('shows the plan title and BOM editor in readOnly mode for a valid token', async () => {
@@ -53,22 +63,20 @@ describe('ShareView route', () => {
       },
       admin.id
     );
-    const token = await planService.createShareToken(plan.id, 7, admin.id);
+    // Correct method name is generateShareToken (not createShareToken).
+    const token = await planService.generateShareToken(plan.id, 7, admin.id);
 
     // ShareView should render without requiring an active session — clear it.
     clearSession();
 
-    const { findByText, queryByText, queryByRole } = render(ShareView, {
+    const { container, queryByText, queryByRole } = render(ShareView, {
       props: { token: token.token }
     });
 
-    // Plan title appears.
-    await findByText('Shared Order 42');
-    // BOM item row is visible.
-    await findByText('PN-S');
-    // readOnly=true → no "Add" tfoot button.
+    await waitForText(container, 'Shared Order 42');
+    // BOM item renders in readOnly mode — partNumber shows as text, not an input value.
+    await waitForText(container, 'PN-S');
     expect(queryByText('Add')).toBeNull();
-    // Read-only rows have no Remove links.
     expect(queryByRole('button', { name: /Remove/i })).toBeNull();
   });
 });

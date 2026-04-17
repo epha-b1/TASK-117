@@ -42,11 +42,13 @@ describe('<BomEditor>', () => {
       item({ id: 'a', partNumber: 'A', quantity: 2, unitCost: 10 }),
       item({ id: 'b', partNumber: 'B', quantity: 3, unitCost: 5 })
     ];
-    const { container, getByText } = render(BomEditor, {
+    const { container, getByDisplayValue } = render(BomEditor, {
       props: { planId: 'p1', items, onChange: () => {} }
     });
-    expect(getByText('A')).toBeInTheDocument();
-    expect(getByText('B')).toBeInTheDocument();
+    // Editable mode renders inputs; the part number shows up as the input
+    // value, not as rendered text.
+    expect(getByDisplayValue('A')).toBeInTheDocument();
+    expect(getByDisplayValue('B')).toBeInTheDocument();
     // Totals: 20.00 and 15.00 lines, plus grand total 35.00
     expect(container.textContent).toContain('$20.00');
     expect(container.textContent).toContain('$15.00');
@@ -147,7 +149,10 @@ describe('<BomEditor>', () => {
     // Change quantity (index 2).
     (inputs[2] as HTMLInputElement).value = '7';
     inputs[2].dispatchEvent(new Event('change', { bubbles: true }));
-    await Promise.resolve();
+    // Flush the async chain: updateField awaits updateBomItem THEN awaits
+    // onChange. A single microtask yield isn't enough — we need to drain
+    // both awaits.
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(updateSpy).toHaveBeenCalledWith('e1', { quantity: 7 }, 'u1');
     expect(onChange).toHaveBeenCalled();

@@ -77,11 +77,13 @@ describe('App — hash-based routing integration', () => {
     setSession({ userId: admin.id, username: admin.username, role: admin.role });
 
     setHash('/');
-    render(App);
+    const { findByText } = render(App);
 
-    // Admins default to /leads.
-    await tick(20);
-    expect(window.location.hash).toBe('#/leads');
+    // Admins default to /leads. App.svelte resolves the route *in memory* —
+    // it does not navigate the URL — so the assertion is on the rendered
+    // route, not on the hash. `Lead Inbox` is the Sidebar/AppShell heading
+    // that LeadInbox's AppShell exposes.
+    await findByText('Lead Inbox');
   });
 
   it('auditor hitting a forbidden area is redirected to /audit and sees a warning toast', async () => {
@@ -131,7 +133,6 @@ describe('App — hash-based routing integration', () => {
   });
 
   it('idle timeout clears session and navigates to /login', async () => {
-    vi.useFakeTimers();
     await ensureFirstRunSeed();
     const listUsers = (await import('../../src/services/auth.service')).listUsers;
     const all = await listUsers();
@@ -139,14 +140,18 @@ describe('App — hash-based routing integration', () => {
     setSession({ userId: admin.id, username: admin.username, role: admin.role });
 
     setHash('/leads');
+    // Install fake timers AFTER session setup so async IDB calls above run
+    // on real timers (safer than advancing through a long-lived async chain).
+    vi.useFakeTimers();
     render(App);
 
-    // Fast-forward beyond the idle timeout (15 minutes).
-    await vi.advanceTimersByTimeAsync(15 * 60 * 1000 + 100);
-
-    // Drain any queued microtasks.
+    // Let onMount schedule the idle timer.
+    await vi.advanceTimersByTimeAsync(10);
+    // Fast-forward past the 15-minute idle timeout.
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000 + 1000);
     vi.useRealTimers();
-    await tick(0);
+    // Let any queued microtasks from the timer callback finish.
+    await tick(20);
 
     expect(window.location.hash).toBe('#/login');
   });

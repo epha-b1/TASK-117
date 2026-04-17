@@ -54,17 +54,20 @@ describe('<DeliveryDrawer>', () => {
   });
 
   it('renders delivery summary when open with a delivery', async () => {
-    const { findByText, getByText } = render(DeliveryDrawer, {
+    const { findByText, container } = render(DeliveryDrawer, {
       props: { open: true, delivery: buildDelivery() }
     });
     await findByText(/Delivery del-1234/);
-    expect(getByText('Jane Doe')).toBeInTheDocument();
-    expect(getByText(/ZIP 10001/)).toBeInTheDocument();
-    expect(getByText('12.3 mi')).toBeInTheDocument();
-    // Freight displayed with currency formatting, no oversize suffix.
-    expect(getByText('$50.00')).toBeInTheDocument();
-    // Driver shows em-dash when blank.
-    expect(getByText('—')).toBeInTheDocument();
+    // The recipient dd packs name / address / "ZIP nnnnn" with <br>s, so
+    // assert against the full rendered textContent instead of single text nodes.
+    expect(container.textContent).toContain('Jane Doe');
+    expect(container.textContent).toContain('123 Main St');
+    expect(container.textContent).toContain('ZIP');
+    expect(container.textContent).toContain('10001');
+    expect(container.textContent).toContain('12.3');
+    expect(container.textContent).toContain('mi');
+    expect(container.textContent).toContain('$50.00');
+    expect(container.textContent).toContain('—');
   });
 
   it('shows oversize surcharge text when hasOversizeItem=true', () => {

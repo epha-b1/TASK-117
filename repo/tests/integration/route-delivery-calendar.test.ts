@@ -69,11 +69,16 @@ describe('DeliveryCalendar route', () => {
     const aud = await register('aud', 'passw0rd!', 'auditor', admin.id);
     setSession({ userId: aud.id, username: aud.username, role: aud.role });
 
-    const { queryByText } = render(DeliveryCalendar);
-    await new Promise((r) => setTimeout(r, 10));
+    const { queryByText, queryByTestId, container } = render(DeliveryCalendar);
+    await new Promise((r) => setTimeout(r, 20));
     expect(queryByText('+ New delivery')).toBeNull();
-    // Export Delivery API Queue button is RBAC-gated to admin + dispatcher only.
-    expect(queryByText(/Export Delivery API Queue/i)).toBeNull();
+    // Export button has a data-testid. The help text mentions the export
+    // feature by phrase, so assert on the button element specifically.
+    expect(queryByTestId('export-queue-btn')).toBeNull();
+    expect(queryByTestId('bulk-generate-btn')).toBeNull();
+    // Auditor cannot access /deliveries at all per RBAC, so page controls
+    // (any .toolbar button) should be gated.
+    void container;
   });
 
   it('renders an existing delivery row', async () => {
@@ -93,8 +98,7 @@ describe('DeliveryCalendar route', () => {
     setSession({ userId: admin.id, username: admin.username, role: admin.role });
 
     const { findByText } = render(DeliveryCalendar);
-    await findByText(/No deliveries|0 deliveries|—/).catch(() => undefined);
-    // At a minimum the page heading should render.
-    await findByText('Delivery Calendar');
+    // Unambiguous empty-state placeholder from the route's own <tbody>.
+    await findByText('No deliveries');
   });
 });

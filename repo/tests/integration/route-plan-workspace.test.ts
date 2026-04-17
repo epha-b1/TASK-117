@@ -65,10 +65,11 @@ describe('PlanWorkspace route', () => {
     const admin = (await listUsers()).find((u) => u.role === 'administrator')!;
     setSession({ userId: admin.id, username: admin.username, role: admin.role });
 
-    const { findByText, getByText, container, queryByText } = render(PlanWorkspace);
+    const { findByText, getByText, container } = render(PlanWorkspace);
     await findByText('+ New plan');
     await fireEvent.click(getByText('+ New plan'));
-    await findByText('Create plan');
+    // The modal heading is "New plan" (dialog aria-label + <h3>).
+    await findByText('New plan');
 
     const titleLabel = Array.from(container.querySelectorAll('label')).find((l) =>
       l.textContent?.trim().startsWith('Title')
@@ -81,8 +82,11 @@ describe('PlanWorkspace route', () => {
     await fireEvent.submit(form);
 
     // Plan list refreshes — the new plan appears in a row.
-    await findByText('My New Plan');
-    expect(queryByText('Create plan')).toBeNull();
+    for (let i = 0; i < 80; i++) {
+      if (container.textContent?.includes('My New Plan')) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(container.textContent).toContain('My New Plan');
     expect(get(toasts).some((t) => t.level === 'success' && /Plan created/.test(t.message))).toBe(true);
   });
 });

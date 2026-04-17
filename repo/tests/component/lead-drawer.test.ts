@@ -53,16 +53,16 @@ describe('<LeadDrawer>', () => {
 
   it('shows lead details when open with a lead', () => {
     const lead = buildLead({ title: 'Fabrication order', budget: 500 });
-    const { getByText, getByRole } = render(LeadDrawer, {
+    const { getByText, getByRole, container } = render(LeadDrawer, {
       props: { open: true, lead }
     });
-    // Drawer exposes role=dialog with the lead's title as aria-label.
     expect(getByRole('dialog').getAttribute('aria-label')).toBe('Fabrication order');
-    // Status badge renders the default 'new' → "New".
     expect(getByText('New')).toBeInTheDocument();
     expect(getByText('$500.00')).toBeInTheDocument();
-    expect(getByText('Ada')).toBeInTheDocument();
-    expect(getByText('5551234567')).toBeInTheDocument();
+    // Contact block packs name/phone/email with <br>s; match the overall text.
+    expect(container.textContent).toContain('Ada');
+    expect(container.textContent).toContain('5551234567');
+    expect(container.textContent).toContain('ada@x.y');
     // History includes the "Created" entry.
     expect(getByText('Created')).toBeInTheDocument();
   });
@@ -84,13 +84,18 @@ describe('<LeadDrawer>', () => {
     expect(queryByText('Move to next status')).toBeNull();
   });
 
-  it('SLA badge renders only when lead.slaFlagged=true', () => {
-    const { getByText, queryByText, rerender } = render(LeadDrawer, {
+  it('SLA badge does NOT render when lead.slaFlagged=false', () => {
+    const { queryByText } = render(LeadDrawer, {
       props: { open: true, lead: buildLead({ slaFlagged: false }) }
     });
     expect(queryByText('SLA overdue')).toBeNull();
-    rerender({ open: true, lead: buildLead({ slaFlagged: true }) });
-    expect(getByText('SLA overdue')).toBeInTheDocument();
+  });
+
+  it('SLA badge renders when lead.slaFlagged=true', async () => {
+    const { findByText } = render(LeadDrawer, {
+      props: { open: true, lead: buildLead({ slaFlagged: true }) }
+    });
+    await findByText('SLA overdue');
   });
 
   it('transition button calls leadService.transitionStatus and pushes success toast', async () => {

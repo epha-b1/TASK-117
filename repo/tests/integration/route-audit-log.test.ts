@@ -24,16 +24,24 @@ describe('AuditLog route', () => {
   beforeEach(freshDb);
   afterEach(cleanup);
 
-  it('shows empty-state when there are no audit entries', async () => {
+  async function waitForText(container: HTMLElement, needle: string | RegExp): Promise<void> {
+    for (let i = 0; i < 80; i++) {
+      const text = container.textContent ?? '';
+      if (typeof needle === 'string' ? text.includes(needle) : needle.test(text)) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error('waitForText timed out: ' + String(needle));
+  }
+
+  it('shows empty-state when filtering by a non-existent actor', async () => {
     await ensureFirstRunSeed(); // writes one entry (first_run_seed)
-    // Even so, the empty state should render only after filtering yields 0.
     const users = await listUsers();
     const admin = users.find((u) => u.role === 'administrator')!;
     setSession({ userId: admin.id, username: admin.username, role: admin.role });
 
-    const { findByText, container } = render(AuditLog);
-    // The seeded first_run entry is present — confirm table rendering.
-    await findByText('first_run_seed');
+    const { container } = render(AuditLog);
+    // Wait for onMount.refresh() to populate the table with the seed row.
+    await waitForText(container, 'first_run_seed');
 
     // Filter by a non-existent actor to force the empty state.
     const actorInput = container.querySelector('input[placeholder="Actor"]') as HTMLInputElement;
@@ -44,7 +52,7 @@ describe('AuditLog route', () => {
     )!;
     await fireEvent.click(applyBtn);
 
-    await findByText('No entries match current filters');
+    await waitForText(container, 'No entries match current filters');
   });
 
   it('renders audit entries and opens the detail drawer on row click', async () => {
@@ -53,7 +61,6 @@ describe('AuditLog route', () => {
     const admin = users.find((u) => u.role === 'administrator')!;
     setSession({ userId: admin.id, username: admin.username, role: admin.role });
 
-    // Add a recognisable audit entry.
     await audit.log({
       actor: admin.id,
       action: 'custom_test_action',
@@ -62,16 +69,14 @@ describe('AuditLog route', () => {
       detail: { marker: 42 }
     });
 
-    const { findByText, getByText, container } = render(AuditLog);
-    await findByText('custom_test_action');
+    const { container } = render(AuditLog);
+    await waitForText(container, 'custom_test_action');
 
-    // Click the row for the custom action.
     const rows = Array.from(container.querySelectorAll('tbody tr'));
     const targetRow = rows.find((r) => r.textContent?.includes('custom_test_action'))!;
     await fireEvent.click(targetRow);
 
-    // Drawer shows the detail JSON with the marker.
-    expect(getByText(/"marker": 42/)).toBeInTheDocument();
+    await waitForText(container, /"marker": 42/);
   });
 
   it('Apply button re-runs listEntries respecting the Action filter', async () => {
@@ -82,33 +87,35 @@ describe('AuditLog route', () => {
 
     await audit.log({
       actor: admin.id,
-      action: 'apple',
+      action: 'apple_action',
       resourceType: 'fruit',
       resourceId: 'a',
       detail: {}
     });
     await audit.log({
       actor: admin.id,
-      action: 'banana',
+      action: 'banana_action',
       resourceType: 'fruit',
       resourceId: 'b',
       detail: {}
     });
 
-    const { findByText, queryByText, container } = render(AuditLog);
-    await findByText('apple');
-    expect(await findByText('banana')).toBeInTheDocument();
+    const { container } = render(AuditLog);
+    await waitForText(container, 'apple_action');
+    await waitForText(container, 'banana_action');
 
-    // Filter by 'apple'.
     const actionInput = container.querySelector('input[placeholder="Action"]') as HTMLInputElement;
-    actionInput.value = 'apple';
+    actionInput.value = 'apple_action';
     actionInput.dispatchEvent(new Event('input', { bubbles: true }));
     const applyBtn = Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Apply'
     )!;
     await fireEvent.click(applyBtn);
 
-    await findByText('apple');
-    expect(queryByText('banana')).toBeNull();
+    // After Apply, 'apple_action' stays; 'banana_action' is filtered out.
+    await waitForText(container, 'apple_action');
+    // Allow the re-query to settle.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(container.textContent).not.toContain('banana_action');
   });
 });

@@ -109,13 +109,23 @@ describe('AdminUsers route', () => {
     const admin = await signInAsAdmin();
     await register('planner-two', 'passw0rd!', 'planner', admin.id);
 
-    const { findByText, container } = render(AdminUsers);
-    await findByText('planner-two');
-    // Two "Edit" buttons — click the one for planner-two.
+    const { container } = render(AdminUsers);
+    // Poll for the async onMount.refresh() to populate the user table.
+    for (let i = 0; i < 80; i++) {
+      if (container.textContent?.includes('planner-two')) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(container.textContent).toContain('planner-two');
+
     const rows = Array.from(container.querySelectorAll('tbody tr'));
     const targetRow = rows.find((r) => r.textContent?.includes('planner-two'))!;
     const editBtn = targetRow.querySelector('button.link') as HTMLButtonElement;
     await fireEvent.click(editBtn);
-    expect(await findByText(/Edit planner-two/)).toBeInTheDocument();
+    // Wait for the edit modal heading to appear.
+    for (let i = 0; i < 60; i++) {
+      if (container.textContent?.includes('Edit planner-two')) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(container.textContent).toContain('Edit planner-two');
   });
 });
