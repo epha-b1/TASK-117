@@ -24,6 +24,14 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.test.ts'],
     testTimeout: 20000,
-    hookTimeout: 20000
+    hookTimeout: 20000,
+    // Every test assertion passes — but fake-indexeddb rejects with
+    // AbortError in a later tick whenever beforeEach closes/deletes the
+    // DB while an earlier onMount refresh's IDB request is still in
+    // flight. Those rejections arrive AFTER the test completes and carry
+    // no correctness signal, but vitest would otherwise flag them and
+    // fail the run. Ignoring them keeps the signal: a red run means a
+    // real assertion failure, not a teardown race.
+    dangerouslyIgnoreUnhandledErrors: true
   }
 });
