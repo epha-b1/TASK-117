@@ -137,13 +137,22 @@ export async function del(store: StoreName, key: IDBValidKey): Promise<void> {
 
 export async function clear(store: StoreName): Promise<void> {
   const db = await getDb();
-  await db.clear(store);
+  const tx = db.transaction(store, 'readwrite');
+  await tx.store.clear();
+  await tx.done;
 }
 
 export async function clearAll(): Promise<void> {
   const db = await getDb();
+  // Use explicit tx + await tx.done so each clear fully commits before the
+  // next. `db.clear(store)` only awaits the request, not the transaction,
+  // which means a later `put` can race with an unfinished clear tx and
+  // observe "stale" state (the data written ends up in a to-be-cleared
+  // store). That was the cause of tests seeing "No X" even after seeding.
   for (const def of STORE_DEFS) {
-    await db.clear(def.name);
+    const tx = db.transaction(def.name, 'readwrite');
+    await tx.store.clear();
+    await tx.done;
   }
 }
 

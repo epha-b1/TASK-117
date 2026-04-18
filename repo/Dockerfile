@@ -14,12 +14,13 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm install --no-audit --no-fund --prefer-offline \
+    npm install --no-audit --no-fund \
       --fetch-retries=10 \
       --fetch-retry-mintimeout=20000 \
       --fetch-retry-maxtimeout=600000 \
       --fetch-timeout=600000 \
-      --maxsockets=1
+      --maxsockets=1 \
+ && test -x node_modules/.bin/vitest
 
 # Test stage — runnable with `docker compose run --rm test`.
 FROM node:20-alpine AS test
