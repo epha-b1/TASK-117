@@ -34,8 +34,9 @@ if (typeof crypto !== 'undefined' && !('randomUUID' in crypto)) {
 // tick — after the test itself has already passed. Vitest treats those
 // as unhandled rejections and fails the whole run even though every
 // assertion passed. They carry no correctness signal, so we absorb them.
-if (typeof process !== 'undefined' && process.on) {
-  process.on('unhandledRejection', (reason: unknown) => {
+const proc = (globalThis as { process?: { on?: (e: string, h: (r: unknown) => void) => void } }).process;
+if (proc && typeof proc.on === 'function') {
+  proc.on('unhandledRejection', (reason: unknown) => {
     const name = (reason as { name?: string } | null)?.name;
     const msg = (reason as { message?: string } | null)?.message ?? '';
     if (name === 'AbortError' || /AbortError/.test(msg)) return;
