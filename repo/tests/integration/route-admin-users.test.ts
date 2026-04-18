@@ -98,7 +98,13 @@ describe('AdminUsers route', () => {
     roleSelect.dispatchEvent(new Event('change', { bubbles: true }));
 
     await fireEvent.submit(form);
-    await findByText('planner-one');
+    // register() hashes via PBKDF2 which regularly exceeds findByText's
+    // 1 s default in jsdom. Poll for up to 4 s.
+    for (let i = 0; i < 400; i++) {
+      if (container.textContent?.includes('planner-one')) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(container.textContent).toContain('planner-one');
 
     // Modal auto-closes on success — "Create user" heading no longer present.
     expect(queryByText('Create user')).toBeNull();
