@@ -121,35 +121,58 @@ function isAbort(e: unknown): boolean {
   return name === 'AbortError' || name === 'InvalidStateError';
 }
 
-export async function put<T extends StoreName>(store: T, value: DbSchema[T]): Promise<void> {
-  const db = await getDb();
-  // Use explicit tx + tx.done so the write is fully committed before we
-  // return. `db.put(...)` only awaits the request; in fake-indexeddb the
-  // tx can commit in a later tick, so a subsequent read from a different
-  // transaction may not see the write yet.
-  // Writes must NOT swallow AbortError — a failed persist is a real error.
+async function runWrite(
+  db: IDBPDatabase,
+  store: StoreName,
+  fn: (tx: ReturnType<IDBPDatabase['transaction']>) => Promise<unknown>
+): Promise<void> {
   const tx = db.transaction(store, 'readwrite');
-  await tx.store.put(value as never);
-  await tx.done;
+  // Attach catch eagerly so tx.done's rejection is observed even if the
+  // request inside fn() rejects first (control jumps to the outer catch
+  // without reaching our `await tx.done`). Writes re-throw any error —
+  // a failed persist is a real failure that must surface.
+  const done = tx.done.catch((e: unknown) => {
+    throw e;
+  });
+  try {
+    await fn(tx);
+    await done;
+  } catch (e) {
+    await done.catch(() => {});
+    throw e;
+  }
 }
 
-// Use explicit transactions for reads so tx.done's promise is awaited
-// within a try/catch. The shorthand `db.getAll(store)` implicitly creates
-// a transaction whose `tx.done` is never awaited — if it aborts (e.g. a
-// torn-down component's onMount had a read in flight), that promise
-// rejects in a detached context and surfaces as an unhandled rejection.
+export async function put<T extends StoreName>(store: T, value: DbSchema[T]): Promise<void> {
+  const db = await getDb();
+  // Explicit tx + tx.done so the write is fully committed before we
+  // return — `db.put(...)` alone only awaits the request, not the commit.
+  await runWrite(db, store, (tx) => tx.objectStore(store).put(value as never));
+}
+
+// Use explicit transactions for reads so that BOTH the request promise
+// and tx.done have a .catch handler attached eagerly. If we only
+// `await tx.done` at the end, and the request rejects first, control
+// jumps to the outer catch and tx.done is left unhandled.
 async function runRead<R>(
   db: IDBPDatabase,
   store: StoreName,
   fn: (tx: ReturnType<IDBPDatabase['transaction']>) => Promise<R>,
   fallback: R
 ): Promise<R> {
+  const tx = db.transaction(store, 'readonly');
+  // Attach catch eagerly — tx.done may reject before we reach an await.
+  const done = tx.done.catch((e: unknown) => {
+    if (isAbort(e)) return;
+    throw e;
+  });
   try {
-    const tx = db.transaction(store, 'readonly');
     const value = await fn(tx);
-    await tx.done;
+    await done;
     return value;
   } catch (e) {
+    // Ensure done's rejection is observed even when fn rejects first.
+    await done.catch(() => {});
     if (isAbort(e)) return fallback;
     throw e;
   }
@@ -204,10 +227,7 @@ export async function getByIndex<T extends StoreName>(
 
 export async function del(store: StoreName, key: IDBValidKey): Promise<void> {
   const db = await getDb();
-  // Writes must NOT swallow AbortError — a failed delete is a real error.
-  const tx = db.transaction(store, 'readwrite');
-  await tx.store.delete(key);
-  await tx.done;
+  await runWrite(db, store, (tx) => tx.objectStore(store).delete(key));
 }
 
 export async function clear(store: StoreName): Promise<void> {
