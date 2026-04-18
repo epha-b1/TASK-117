@@ -1,17 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
 import NotificationCenter from '../../src/routes/NotificationCenter.svelte';
-import { clearAll } from '../../src/services/db';
+import { __resetForTests } from '../../src/services/db';
 import { ensureFirstRunSeed, listUsers } from '../../src/services/auth.service';
 import { notificationService } from '../../src/services/notification.service';
 import { setSession, clearSession } from '../../src/stores/session.store';
 import { toasts } from '../../src/stores/toast.store';
 
 async function freshDb() {
-  await clearAll();
+  await __resetForTests();
   clearSession();
   localStorage.clear();
   toasts.set([]);
+  const req = indexedDB.deleteDatabase('forgeops');
+  await new Promise<void>((resolve) => {
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 // "Inbox" is ambiguous — it matches both the Sidebar's "Lead Inbox" link and

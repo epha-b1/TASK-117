@@ -96,7 +96,14 @@ export function getDb(): Promise<IDBPDatabase> {
 
 export async function put<T extends StoreName>(store: T, value: DbSchema[T]): Promise<void> {
   const db = await getDb();
-  await db.put(store, value as never);
+  // Use explicit tx + tx.done so the write is fully committed before we
+  // return. `db.put(...)` only awaits the request; in fake-indexeddb the
+  // tx can commit in a later tick, so a subsequent read from a different
+  // transaction may not see the write yet. That caused tests to see empty
+  // reads after successful writes.
+  const tx = db.transaction(store, 'readwrite');
+  await tx.store.put(value as never);
+  await tx.done;
 }
 
 export async function get<T extends StoreName>(
@@ -132,7 +139,9 @@ export async function getByIndex<T extends StoreName>(
 
 export async function del(store: StoreName, key: IDBValidKey): Promise<void> {
   const db = await getDb();
-  await db.delete(store, key);
+  const tx = db.transaction(store, 'readwrite');
+  await tx.store.delete(key);
+  await tx.done;
 }
 
 export async function clear(store: StoreName): Promise<void> {

@@ -1,15 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import Login from '../../src/routes/Login.svelte';
-import { clearAll } from '../../src/services/db';
+import { __resetForTests } from '../../src/services/db';
 import { ensureFirstRunSeed, register } from '../../src/services/auth.service';
 import { clearSession } from '../../src/stores/session.store';
 import { lsSet, LS_KEYS } from '../../src/utils/local-storage';
 
 async function freshDb() {
-  await clearAll();
+  await __resetForTests();
   clearSession();
   localStorage.clear();
+  const req = indexedDB.deleteDatabase('forgeops');
+  await new Promise<void>((resolve) => {
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 describe('<Login> route', () => {

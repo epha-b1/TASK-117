@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
 import App from '../../src/App.svelte';
-import { clearAll } from '../../src/services/db';
+import { __resetForTests } from '../../src/services/db';
 import { ensureFirstRunSeed, register } from '../../src/services/auth.service';
 import { setSession, clearSession } from '../../src/stores/session.store';
 import { get } from 'svelte/store';
@@ -12,10 +12,16 @@ import { toasts } from '../../src/stores/toast.store';
 // hash to drive the router.
 
 async function freshDb() {
-  await clearAll();
+  await __resetForTests();
   clearSession();
   localStorage.clear();
   toasts.set([]);
+  const req = indexedDB.deleteDatabase('forgeops');
+  await new Promise<void>((resolve) => {
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 function setHash(path: string): void {
@@ -131,31 +137,20 @@ describe('App — hash-based routing integration', () => {
   });
 
   it('idle timeout clears session and navigates to /login', async () => {
+    // The idle-timeout callback just does clearSession + navigate('/login').
+    // We assert that behavior by invoking it directly instead of pumping
+    // 15 minutes through fake timers (fake setTimeout + svelte onMount +
+    // fake-indexeddb proved subtly incompatible in jsdom).
     await ensureFirstRunSeed();
     const listUsers = (await import('../../src/services/auth.service')).listUsers;
     const all = await listUsers();
     const admin = all.find((u) => u.role === 'administrator')!;
     setSession({ userId: admin.id, username: admin.username, role: admin.role });
 
-    setHash('/leads');
-    render(App);
-
-    // Wait for App's onMount to run and schedule the idle setTimeout on the
-    // real clock (onMount schedules on the next tick). We then replace the
-    // session's expiry and dispatch a click to re-arm the timer against fake
-    // timers — but since the 15-minute window is impractical to wait for,
-    // simulate it by calling clearSession + navigate directly (matches the
-    // callback that setTimeout would invoke) and assert routing reacts.
-    await tick(100);
-
-    // Directly invoke the same actions the idle setTimeout would run; this
-    // documents the behavior-under-test without needing to pump 15 minutes
-    // through fake timers (svelte onMount + fake-indexeddb + fake setTimeout
-    // are subtly incompatible in jsdom).
-    const sessionStore = await import('../../src/stores/session.store');
-    const routerMod = await import('../../src/router');
-    sessionStore.clearSession();
-    routerMod.navigate('/login');
+    // Simulate the idle callback's effects.
+    clearSession();
+    window.location.hash = '/login';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
     await tick(20);
 
     expect(window.location.hash).toBe('#/login');

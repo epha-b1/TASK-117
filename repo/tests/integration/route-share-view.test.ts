@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
 import ShareView from '../../src/routes/ShareView.svelte';
-import { clearAll } from '../../src/services/db';
+import { __resetForTests } from '../../src/services/db';
 import {
   ensureFirstRunSeed,
   listUsers
@@ -10,9 +10,15 @@ import { planService } from '../../src/services/plan.service';
 import { setSession, clearSession } from '../../src/stores/session.store';
 
 async function freshDb() {
-  await clearAll();
+  await __resetForTests();
   clearSession();
   localStorage.clear();
+  const req = indexedDB.deleteDatabase('forgeops');
+  await new Promise<void>((resolve) => {
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 describe('ShareView route', () => {

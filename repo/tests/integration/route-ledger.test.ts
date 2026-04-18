@@ -1,17 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
 import Ledger from '../../src/routes/Ledger.svelte';
-import { clearAll } from '../../src/services/db';
+import { __resetForTests } from '../../src/services/db';
 import { ensureFirstRunSeed, listUsers, register } from '../../src/services/auth.service';
 import { ledgerService } from '../../src/services/ledger.service';
 import { setSession, clearSession } from '../../src/stores/session.store';
 import { toasts } from '../../src/stores/toast.store';
 
 async function freshDb() {
-  await clearAll();
+  await __resetForTests();
   clearSession();
   localStorage.clear();
   toasts.set([]);
+  const req = indexedDB.deleteDatabase('forgeops');
+  await new Promise<void>((resolve) => {
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 describe('Ledger route', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import DeliveryForm from '../../src/components/deliveries/DeliveryForm.svelte';
-import { clearAll, put } from '../../src/services/db';
+import { __resetForTests, put } from '../../src/services/db';
 
 const TEST_DEPOTS = [
   { id: 'dep-1', name: 'Main Depot', lat: 40, lng: -74, zipRanges: ['10001'] },
@@ -9,11 +9,13 @@ const TEST_DEPOTS = [
 ];
 
 async function freshDb() {
-  // Use clearAll rather than deleteDatabase to avoid a close/delete race in
-  // fake-indexeddb: closing a connection is not strictly synchronous, so a
-  // follow-up deleteDatabase can fire `onblocked` and we continue without
-  // the DB actually being gone. Clearing each store is more reliable here.
-  await clearAll();
+  await __resetForTests();
+  const req = indexedDB.deleteDatabase('forgeops');
+  await new Promise<void>((resolve) => {
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
   for (const d of TEST_DEPOTS) await put('depots', d as never);
 }
 

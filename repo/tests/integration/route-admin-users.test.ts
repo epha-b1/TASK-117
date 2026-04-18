@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import AdminUsers from '../../src/routes/AdminUsers.svelte';
-import { clearAll } from '../../src/services/db';
+import { __resetForTests } from '../../src/services/db';
 import {
   ensureFirstRunSeed,
   listUsers,
@@ -12,10 +12,16 @@ import { setSession, clearSession } from '../../src/stores/session.store';
 import { toasts } from '../../src/stores/toast.store';
 
 async function freshDb() {
-  await clearAll();
+  await __resetForTests();
   clearSession();
   localStorage.clear();
   toasts.set([]);
+  const req = indexedDB.deleteDatabase('forgeops');
+  await new Promise<void>((resolve) => {
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
 }
 
 async function signInAsAdmin() {
