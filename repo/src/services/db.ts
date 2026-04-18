@@ -133,27 +133,47 @@ export async function put<T extends StoreName>(store: T, value: DbSchema[T]): Pr
   await tx.done;
 }
 
+// Use explicit transactions for reads so tx.done's promise is awaited
+// within a try/catch. The shorthand `db.getAll(store)` implicitly creates
+// a transaction whose `tx.done` is never awaited — if it aborts (e.g. a
+// torn-down component's onMount had a read in flight), that promise
+// rejects in a detached context and surfaces as an unhandled rejection.
+async function runRead<R>(
+  db: IDBPDatabase,
+  store: StoreName,
+  fn: (tx: ReturnType<IDBPDatabase['transaction']>) => Promise<R>,
+  fallback: R
+): Promise<R> {
+  try {
+    const tx = db.transaction(store, 'readonly');
+    const value = await fn(tx);
+    await tx.done;
+    return value;
+  } catch (e) {
+    if (isAbort(e)) return fallback;
+    throw e;
+  }
+}
+
 export async function get<T extends StoreName>(
   store: T,
   key: IDBValidKey
 ): Promise<DbSchema[T] | undefined> {
   const db = await getDb();
-  try {
-    return (await db.get(store, key)) as DbSchema[T] | undefined;
-  } catch (e) {
-    if (isAbort(e)) return undefined;
-    throw e;
-  }
+  return runRead(
+    db, store,
+    (tx) => tx.objectStore(store).get(key) as Promise<DbSchema[T] | undefined>,
+    undefined
+  );
 }
 
 export async function getAll<T extends StoreName>(store: T): Promise<DbSchema[T][]> {
   const db = await getDb();
-  try {
-    return (await db.getAll(store)) as DbSchema[T][];
-  } catch (e) {
-    if (isAbort(e)) return [];
-    throw e;
-  }
+  return runRead(
+    db, store,
+    (tx) => tx.objectStore(store).getAll() as Promise<DbSchema[T][]>,
+    [] as DbSchema[T][]
+  );
 }
 
 export async function getAllByIndex<T extends StoreName>(
@@ -162,12 +182,11 @@ export async function getAllByIndex<T extends StoreName>(
   key: IDBValidKey | IDBKeyRange
 ): Promise<DbSchema[T][]> {
   const db = await getDb();
-  try {
-    return (await db.getAllFromIndex(store, index, key)) as DbSchema[T][];
-  } catch (e) {
-    if (isAbort(e)) return [];
-    throw e;
-  }
+  return runRead(
+    db, store,
+    (tx) => tx.objectStore(store).index(index).getAll(key) as Promise<DbSchema[T][]>,
+    [] as DbSchema[T][]
+  );
 }
 
 export async function getByIndex<T extends StoreName>(
@@ -176,12 +195,11 @@ export async function getByIndex<T extends StoreName>(
   key: IDBValidKey
 ): Promise<DbSchema[T] | undefined> {
   const db = await getDb();
-  try {
-    return (await db.getFromIndex(store, index, key)) as DbSchema[T] | undefined;
-  } catch (e) {
-    if (isAbort(e)) return undefined;
-    throw e;
-  }
+  return runRead(
+    db, store,
+    (tx) => tx.objectStore(store).index(index).get(key) as Promise<DbSchema[T] | undefined>,
+    undefined
+  );
 }
 
 export async function del(store: StoreName, key: IDBValidKey): Promise<void> {
