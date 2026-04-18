@@ -127,14 +127,10 @@ export async function put<T extends StoreName>(store: T, value: DbSchema[T]): Pr
   // return. `db.put(...)` only awaits the request; in fake-indexeddb the
   // tx can commit in a later tick, so a subsequent read from a different
   // transaction may not see the write yet.
-  try {
-    const tx = db.transaction(store, 'readwrite');
-    await tx.store.put(value as never);
-    await tx.done;
-  } catch (e) {
-    if (isAbort(e)) return;
-    throw e;
-  }
+  // Writes must NOT swallow AbortError — a failed persist is a real error.
+  const tx = db.transaction(store, 'readwrite');
+  await tx.store.put(value as never);
+  await tx.done;
 }
 
 export async function get<T extends StoreName>(
@@ -190,14 +186,10 @@ export async function getByIndex<T extends StoreName>(
 
 export async function del(store: StoreName, key: IDBValidKey): Promise<void> {
   const db = await getDb();
-  try {
-    const tx = db.transaction(store, 'readwrite');
-    await tx.store.delete(key);
-    await tx.done;
-  } catch (e) {
-    if (isAbort(e)) return;
-    throw e;
-  }
+  // Writes must NOT swallow AbortError — a failed delete is a real error.
+  const tx = db.transaction(store, 'readwrite');
+  await tx.store.delete(key);
+  await tx.done;
 }
 
 export async function clear(store: StoreName): Promise<void> {
