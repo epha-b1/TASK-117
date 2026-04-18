@@ -27,19 +27,3 @@ if (typeof crypto !== 'undefined' && !('randomUUID' in crypto)) {
     });
 }
 
-// Swallow benign fake-indexeddb AbortErrors from teardown leftovers.
-// When a test's beforeEach closes the DB / deletes the database, any
-// async IDB request that was still in flight (e.g. an onMount refresh
-// whose microtask hadn't finished) rejects with AbortError in the next
-// tick — after the test itself has already passed. Vitest treats those
-// as unhandled rejections and fails the whole run even though every
-// assertion passed. They carry no correctness signal, so we absorb them.
-const proc = (globalThis as { process?: { on?: (e: string, h: (r: unknown) => void) => void } }).process;
-if (proc && typeof proc.on === 'function') {
-  proc.on('unhandledRejection', (reason: unknown) => {
-    const name = (reason as { name?: string } | null)?.name;
-    const msg = (reason as { message?: string } | null)?.message ?? '';
-    if (name === 'AbortError' || /AbortError/.test(msg)) return;
-    throw reason;
-  });
-}

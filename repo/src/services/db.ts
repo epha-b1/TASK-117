@@ -111,16 +111,30 @@ export function getDb(): Promise<IDBPDatabase> {
   return dbPromise;
 }
 
+// If the DB connection is closed mid-operation (e.g. a component unmounts
+// mid-flight because a new test's beforeEach reset the DB), idb rejects
+// the pending request with an AbortError. That's not a correctness
+// failure — the caller has been torn down and can't act on the result.
+// Rethrow anything else so real errors still surface.
+function isAbort(e: unknown): boolean {
+  const name = (e as { name?: string } | null)?.name;
+  return name === 'AbortError' || name === 'InvalidStateError';
+}
+
 export async function put<T extends StoreName>(store: T, value: DbSchema[T]): Promise<void> {
   const db = await getDb();
   // Use explicit tx + tx.done so the write is fully committed before we
   // return. `db.put(...)` only awaits the request; in fake-indexeddb the
   // tx can commit in a later tick, so a subsequent read from a different
-  // transaction may not see the write yet. That caused tests to see empty
-  // reads after successful writes.
-  const tx = db.transaction(store, 'readwrite');
-  await tx.store.put(value as never);
-  await tx.done;
+  // transaction may not see the write yet.
+  try {
+    const tx = db.transaction(store, 'readwrite');
+    await tx.store.put(value as never);
+    await tx.done;
+  } catch (e) {
+    if (isAbort(e)) return;
+    throw e;
+  }
 }
 
 export async function get<T extends StoreName>(
@@ -128,12 +142,22 @@ export async function get<T extends StoreName>(
   key: IDBValidKey
 ): Promise<DbSchema[T] | undefined> {
   const db = await getDb();
-  return (await db.get(store, key)) as DbSchema[T] | undefined;
+  try {
+    return (await db.get(store, key)) as DbSchema[T] | undefined;
+  } catch (e) {
+    if (isAbort(e)) return undefined;
+    throw e;
+  }
 }
 
 export async function getAll<T extends StoreName>(store: T): Promise<DbSchema[T][]> {
   const db = await getDb();
-  return (await db.getAll(store)) as DbSchema[T][];
+  try {
+    return (await db.getAll(store)) as DbSchema[T][];
+  } catch (e) {
+    if (isAbort(e)) return [];
+    throw e;
+  }
 }
 
 export async function getAllByIndex<T extends StoreName>(
@@ -142,7 +166,12 @@ export async function getAllByIndex<T extends StoreName>(
   key: IDBValidKey | IDBKeyRange
 ): Promise<DbSchema[T][]> {
   const db = await getDb();
-  return (await db.getAllFromIndex(store, index, key)) as DbSchema[T][];
+  try {
+    return (await db.getAllFromIndex(store, index, key)) as DbSchema[T][];
+  } catch (e) {
+    if (isAbort(e)) return [];
+    throw e;
+  }
 }
 
 export async function getByIndex<T extends StoreName>(
@@ -151,14 +180,24 @@ export async function getByIndex<T extends StoreName>(
   key: IDBValidKey
 ): Promise<DbSchema[T] | undefined> {
   const db = await getDb();
-  return (await db.getFromIndex(store, index, key)) as DbSchema[T] | undefined;
+  try {
+    return (await db.getFromIndex(store, index, key)) as DbSchema[T] | undefined;
+  } catch (e) {
+    if (isAbort(e)) return undefined;
+    throw e;
+  }
 }
 
 export async function del(store: StoreName, key: IDBValidKey): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction(store, 'readwrite');
-  await tx.store.delete(key);
-  await tx.done;
+  try {
+    const tx = db.transaction(store, 'readwrite');
+    await tx.store.delete(key);
+    await tx.done;
+  } catch (e) {
+    if (isAbort(e)) return;
+    throw e;
+  }
 }
 
 export async function clear(store: StoreName): Promise<void> {
